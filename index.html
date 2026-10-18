@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14121f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Hit-Zeitreise</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Hit-Zeitreise</div>
+  <div class="stats" id="stats"></div>
+  <button class="icon-btn" id="btnSettings" aria-label="Einstellungen">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</header>
+
+<main id="main">
+  <section class="stage" id="stage"></section>
+  <div class="msg" id="msg" hidden></div>
+
+  <details class="years" id="yearsPanel">
+    <summary>Jahreskarten <span id="yearsSummary"></span></summary>
+    <div class="year-grid" id="yearGrid"></div>
+    <p class="hint">Zahl = wie oft das Jahr in diesem Spiel schon aufgelöst wurde. Volle Jahre kommen nicht mehr dran.</p>
+  </details>
+</main>
+
+<dialog id="settings">
+  <form method="dialog" class="settings">
+    <h2>Einstellungen</h2>
+
+    <fieldset>
+      <legend>Spotify</legend>
+      <label>Client ID
+        <input id="cfgClientId" autocomplete="off" spellcheck="false" placeholder="aus dem Spotify Developer Dashboard">
+      </label>
+      <div class="small">Redirect URI (genau so im Dashboard eintragen):
+        <code id="redirectUri"></code>
+        <button type="button" class="link" id="btnCopyRedirect">kopieren</button>
+      </div>
+      <div class="row">
+        <span id="authStatus" class="small"></span>
+        <button type="button" id="btnLogin" class="btn small-btn">Verbinden</button>
+        <button type="button" id="btnLogout" class="btn small-btn ghost">Trennen</button>
+      </div>
+      <label>Wiedergabegerät
+        <div class="row">
+          <select id="cfgDevice"><option value="">automatisch</option></select>
+          <button type="button" id="btnDevices" class="btn small-btn ghost">↻</button>
+        </div>
+      </label>
+      <div class="small">Auf dem Handy muss die Spotify-App geöffnet sein, damit sie als Gerät auftaucht. Ein Bluetooth-Lautsprecher oder PC mit Spotify geht auch.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Spiel</legend>
+      <label>Max. Songs pro Jahr
+        <input type="number" id="cfgMaxPerYear" min="1" max="20">
+      </label>
+      <div class="row two">
+        <label>Von Jahr <input type="number" id="cfgFrom" min="1957" max="2026"></label>
+        <label>Bis Jahr <input type="number" id="cfgTo" min="1957" max="2026"></label>
+      </div>
+      <label>Wiedergabe starten
+        <select id="cfgStart">
+          <option value="0">am Anfang</option>
+          <option value="30">nach 30 Sekunden</option>
+          <option value="rand">an zufälliger Stelle (0:20–1:20)</option>
+        </select>
+      </label>
+      <div class="small" id="poolInfo"></div>
+    </fieldset>
+
+    <div class="row end">
+      <button type="button" id="btnNewGame" class="btn ghost danger">Neues Spiel</button>
+      <button value="close" class="btn">Fertig</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="songs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
