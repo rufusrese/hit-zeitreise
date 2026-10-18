@@ -166,6 +166,11 @@ async function pickDevice() {
 
 class NoDevice extends Error {}
 
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+// 403 "Restriction violated", 404 und 502 bekommt man v. a. von der Android-App, wenn sie im
+// Hintergrund nicht aktiv ist. Wiedergabe dann erst auf das Gerät übertragen und erneut versuchen.
+const isWakeable = (e) => e instanceof ApiError && [403, 404, 502].includes(e.status);
+
 async function playUri(uri) {
   if (sdkPlayer && sdkPlayer.activateElement) { try { await sdkPlayer.activateElement(); } catch {} }
   const dev = await pickDevice();
@@ -173,19 +178,48 @@ async function playUri(uri) {
   let pos = 0;
   if (cfg.start === '30') pos = 30000;
   else if (cfg.start === 'rand') pos = 20000 + Math.floor(Math.random() * 60000);
-  await api('PUT', '/me/player/play?device_id=' + encodeURIComponent(dev.id), { uris: [uri], position_ms: pos });
+  const play = () => api('PUT', '/me/player/play?device_id=' + encodeURIComponent(dev.id), { uris: [uri], position_ms: pos });
+  try {
+    await play();
+  } catch (e) {
+    if (!isWakeable(e)) throw e;
+    await api('PUT', '/me/player', { device_ids: [dev.id], play: false }).catch(() => {});
+    await sleep(800);
+    try { await play(); }
+    catch (e2) {
+      if (!isWakeable(e2)) throw e2;
+      await sleep(1500);
+      await play();
+    }
+  }
+  ui.deviceId = dev.id;
   ui.deviceName = dev.name;
   ui.paused = false;
 }
 
-async function pause() {
-  await api('PUT', '/me/player/pause');
-  ui.paused = true;
+async function playerIsPlaying() {
+  const st = await api('GET', '/me/player').catch(() => null);
+  return st ? !!st.is_playing : null;
 }
-async function resume() {
-  await api('PUT', '/me/player/play');
-  ui.paused = false;
+
+// Pause/Weiter: Ist der Player schon im gewünschten Zustand, meldet Spotify 403 – dann nur den Status übernehmen.
+async function setPlaying(wanted) {
+  const q = ui.deviceId ? '?device_id=' + encodeURIComponent(ui.deviceId) : '';
+  try {
+    await api('PUT', '/me/player/' + (wanted ? 'play' : 'pause') + q);
+  } catch (e) {
+    if (!isWakeable(e)) throw e;
+    await sleep(500);
+    const now = await playerIsPlaying();
+    if (now !== wanted) {
+      if (wanted && game.current) { await playUri(game.current.uri); return; }
+      if (now !== null) throw e;
+    }
+  }
+  ui.paused = !wanted;
 }
+const pause = () => setPlaying(false);
+const resume = () => setPlaying(true);
 
 // ---------- Track matching ----------
 function norm(s, keepParens) {
@@ -300,12 +334,18 @@ async function playCurrent() {
 
 function handleError(e) {
   console.error(e);
+  ui.retryOnReturn = e instanceof NoDevice || (e instanceof ApiError && [403, 404, 502].includes(e.status));
   if (e instanceof NoDevice || (e instanceof ApiError && e.status === 404)) {
     showMsg(`<b>Kein aktives Spotify-Gerät gefunden.</b><br>Öffne die Spotify-App (einmal kurz irgendwas abspielen &amp; pausieren), komm zurück und tippe auf „Nochmal“.
       <div class="btn-row"><a class="btn small-btn green" href="spotify:" style="text-decoration:none">Spotify öffnen</a>
       <button class="btn small-btn ghost" onclick="retryPlay()">Nochmal</button></div>`, 'error');
-  } else if (e instanceof ApiError && e.status === 403) {
+  } else if (e instanceof ApiError && e.status === 403 && /premium/i.test(e.message + ' ' + (e.reason || ''))) {
     showMsg('Spotify verweigert die Wiedergabe (' + esc(e.message) + '). Für die Steuerung ist Spotify Premium nötig.', 'error');
+  } else if (e instanceof ApiError && e.status === 403) {
+    showMsg(`<b>Spotify-App reagiert gerade nicht</b> (${esc(e.message)}).<br>Öffne Spotify kurz im Vordergrund, komm zurück und tippe auf „Nochmal“.
+      Tritt das oft auf: in den Android-Einstellungen bei Spotify die Akku-Optimierung ausschalten.
+      <div class="btn-row"><a class="btn small-btn green" href="spotify:" style="text-decoration:none">Spotify öffnen</a>
+      <button class="btn small-btn ghost" onclick="retryPlay()">Nochmal</button></div>`, 'error');
   } else if (e instanceof ApiError && e.reason === 'QUOTA_EXCEEDED') {
     showMsg('Spotify-API-Limit erreicht. Bitte ein paar Minuten warten.', 'error');
   } else {
@@ -314,6 +354,7 @@ function handleError(e) {
 }
 
 async function retryPlay() {
+  ui.retryOnReturn = false;
   if (!game.current) return nextSong();
   ui.busy = true; render();
   await playCurrent();
@@ -483,4 +524,8 @@ function openSettingsRefresh() { $('cfgFrom').value = cfg.from; $('cfgTo').value
   await handleCallback();
   render();
   initSdk();
+  // Nach "Spotify öffnen" zurück im Browser -> automatisch erneut abspielen
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && ui.retryOnReturn && !ui.busy) setTimeout(retryPlay, 600);
+  });
 })();
