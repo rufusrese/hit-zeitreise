@@ -26,6 +26,7 @@ const saveCfg = () => save(K.cfg, cfg);
 
 // ---------- Helpers ----------
 const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>';
 
@@ -128,22 +129,61 @@ async function api(method, path, body, retry = true) {
   return j;
 }
 
-// ---------- Web Playback SDK (works in desktop browsers, not on phones) ----------
+// ---------- Web Playback SDK (spielt direkt im Browser) ----------
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+let sdkFailed = false;
+
+// Das SDK startet in Chrome auf Android offenbar nur, wenn sich der Browser als Desktop ausgibt
+// (so wie bei "Desktopwebsite"). Daher nur für das SDK eine Desktop-Kennung vortäuschen.
+function spoofDesktopUA() {
+  const desktopUA = navigator.userAgent
+    .replace(/\(Linux; Android[^)]*\)/, '(X11; Linux x86_64)')
+    .replace(/\(i(Phone|Pad|Pod)[^)]*\)/, '(Macintosh; Intel Mac OS X 10_15_7)')
+    .replace(/ Mobile( Safari)?/, '$1');
+  const def = (obj, key, val) => { try { Object.defineProperty(obj, key, { get: () => val, configurable: true }); } catch {} };
+  def(navigator, 'userAgent', desktopUA);
+  def(navigator, 'appVersion', desktopUA.replace(/^Mozilla\//, ''));
+  def(navigator, 'platform', 'Linux x86_64');
+  def(navigator, 'maxTouchPoints', 0);
+  if (navigator.userAgentData) {
+    const uad = navigator.userAgentData;
+    def(navigator, 'userAgentData', {
+      brands: uad.brands, mobile: false, platform: 'Linux',
+      getHighEntropyValues: (h) => uad.getHighEntropyValues(h).then((v) => ({ ...v, mobile: false, platform: 'Linux' })),
+      toJSON: () => ({ brands: uad.brands, mobile: false, platform: 'Linux' }),
+    });
+  }
+}
+
 function initSdk() {
-  if (sdkPlayer || !tok || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
+  if (sdkPlayer || !tok || window.onSpotifyWebPlaybackSDKReady) return;
+  if (IS_MOBILE) spoofDesktopUA();
   window.onSpotifyWebPlaybackSDKReady = () => {
     sdkPlayer = new Spotify.Player({
-      name: 'Hit-Zeitreise (Browser)',
+      name: 'Hit-Zeitreise (dieses Gerät)',
       getOAuthToken: (cb) => accessToken().then(cb).catch(() => {}),
-      volume: 0.8,
+      volume: 0.9,
     });
-    sdkPlayer.addListener('ready', ({ device_id }) => { sdkDeviceId = device_id; });
+    sdkPlayer.addListener('ready', ({ device_id }) => { sdkDeviceId = device_id; sdkFailed = false; });
     sdkPlayer.addListener('not_ready', () => { sdkDeviceId = null; });
-    sdkPlayer.connect();
+    sdkPlayer.addListener('initialization_error', (e) => { console.warn('SDK', e); sdkFailed = true; });
+    sdkPlayer.addListener('account_error', (e) => { console.warn('SDK', e); sdkFailed = true; });
+    sdkPlayer.connect().then((ok) => { if (!ok) sdkFailed = true; });
   };
   const s = document.createElement('script');
   s.src = 'https://sdk.scdn.co/spotify-player.js';
+  s.onerror = () => { sdkFailed = true; };
   document.head.appendChild(s);
+}
+
+// Muss direkt im Tipp-Handler (vor dem ersten await) laufen, sonst blockiert der Browser den Ton.
+function unlockAudio() {
+  if (sdkPlayer && sdkPlayer.activateElement) sdkPlayer.activateElement().catch(() => {});
+}
+
+async function waitForSdk(ms) {
+  const end = Date.now() + ms;
+  while (!sdkDeviceId && !sdkFailed && Date.now() < end) await sleep(200);
 }
 
 // ---------- Devices & playback ----------
@@ -154,25 +194,26 @@ async function fetchDevices() {
 }
 
 async function pickDevice() {
+  if (!cfg.deviceId) await waitForSdk(5000);
   const ds = await fetchDevices();
+  const sdk = sdkDeviceId && { id: sdkDeviceId, name: 'diesem Gerät (Browser)' };
   return (
     ds.find((d) => d.id === cfg.deviceId) ||
+    (cfg.deviceId && cfg.deviceId === sdkDeviceId && sdk) ||
+    sdk ||
     ds.find((d) => d.is_active) ||
     ds.find((d) => d.type === 'Smartphone') ||
-    ds.find((d) => d.id === sdkDeviceId) ||
     ds[0] || null
   );
 }
 
 class NoDevice extends Error {}
 
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 // 403 "Restriction violated", 404 und 502 bekommt man v. a. von der Android-App, wenn sie im
 // Hintergrund nicht aktiv ist. Wiedergabe dann erst auf das Gerät übertragen und erneut versuchen.
 const isWakeable = (e) => e instanceof ApiError && [403, 404, 502].includes(e.status);
 
 async function playUri(uri) {
-  if (sdkPlayer && sdkPlayer.activateElement) { try { await sdkPlayer.activateElement(); } catch {} }
   const dev = await pickDevice();
   if (!dev) throw new NoDevice();
   let pos = 0;
@@ -302,6 +343,7 @@ function candidates() {
 }
 
 async function nextSong() {
+  unlockAudio();
   if (ui.busy) return;
   if (!tok) { login(); return; }
   ui.busy = true; showMsg(''); render();
@@ -354,6 +396,7 @@ function handleError(e) {
 }
 
 async function retryPlay() {
+  unlockAudio();
   ui.retryOnReturn = false;
   if (!game.current) return nextSong();
   ui.busy = true; render();
@@ -378,11 +421,13 @@ async function skip() {
 }
 
 async function togglePause() {
+  unlockAudio();
   try { ui.paused ? await resume() : await pause(); } catch (e) { handleError(e); }
   render();
 }
 
 async function restart() {
+  unlockAudio();
   if (game.current) { ui.busy = true; render(); await playCurrent(); ui.busy = false; render(); }
 }
 
