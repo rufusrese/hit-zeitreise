@@ -1,4 +1,4 @@
-import * as S from './spotify.js?v=4';
+import * as S from './spotify.js?v=5';
 
 // ---------- Helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -9,7 +9,13 @@ const fmt = (n) => Number(n).toLocaleString('de');
 const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>';
 const EQ = (paused) => `<div class="eq ${paused ? 'paused' : ''}"><span></span><span></span><span></span><span></span><span></span></div>`;
 
-const settings = Object.assign({ deviceId: '', start: '0', maxPerYear: 3, from: '', to: '', catalogId: null }, load('hz_settings', {}));
+const settings = Object.assign({ deviceId: '', start: '0', maxPerYear: 3, from: '', to: '', catalogId: null, perPage: 12 }, load('hz_settings', {}));
+const PRINT_LAYOUTS = [
+  [6, '6 pro Seite – groß (8,5 cm)'],
+  [12, '12 pro Seite – Standard (6,5 cm)'],
+  [20, '20 pro Seite – klein (4,8 cm)'],
+  [30, '30 pro Seite – sehr klein (3,8 cm)'],
+];
 const saveSettings = () => save('hz_settings', settings);
 
 const st = {
@@ -844,28 +850,33 @@ async function viewPrint(id) {
   const c = await loadCatalog(id, true);
   const batches = await srv('GET', `/catalogs/${id}/prints`);
   const printed = c.songs.filter((s) => s.printed).length, left = c.songs.length - printed;
-  const sheets = Math.min(5, Math.max(1, Math.ceil(left / 12)));
+  const per = settings.perPage;
+  const sheets = Math.min(5, Math.max(1, Math.ceil(left / per)));
   $('view').innerHTML = `
     <a class="back" href="/#/katalog/${c.id}">‹ ${esc(c.name)}</a>
     <section class="section-head"><h2>Karten drucken</h2>
       <div class="muted small">${fmt(c.songs.length)} Songs · ${fmt(printed)} schon gedruckt · ${fmt(left)} noch nicht gedruckt</div></section>
     <section class="panel">
       <form data-form="print" class="stack">
-        <label>Anzahl Blätter (je 12 Karten, doppelseitig)
+        <label>Karten pro Seite
+          <select name="perPage" data-change="sheetCount">
+            ${PRINT_LAYOUTS.map(([n, label]) => `<option value="${n}" ${n === per ? 'selected' : ''}>${label}</option>`).join('')}
+          </select></label>
+        <label>Anzahl Blätter (doppelseitig bedruckt)
           <input name="sheets" type="number" min="1" max="100" value="${sheets}" data-change="sheetCount"></label>
-        <div class="muted small" id="sheetInfo">= ${sheets * 12} Karten, ${sheets * 2} PDF-Seiten</div>
+        <div class="muted small" id="sheetInfo">${sheetInfo(sheets, per)}</div>
         <label class="check"><input type="checkbox" name="onlyNew" checked> Nur Songs, die ich noch nicht gedruckt habe</label>
         <label class="check"><input type="checkbox" name="color" checked> Farbige Lösungsseite</label>
         <button class="btn wide">PDF erstellen</button>
       </form>
       <p class="hint">Die Songs werden zufällig ausgewählt und als gedruckt gemerkt. Drucken: <b>beidseitig, an der langen Kante spiegeln</b>,
-        Skalierung <b>100 % / Tatsächliche Größe</b>. Danach an den gestrichelten Linien schneiden (6,5 × 6,5 cm).</p>
+        Skalierung <b>100 % / Tatsächliche Größe</b>. Danach an den gestrichelten Linien schneiden.</p>
     </section>
     <section class="panel">
       <h3>Bisherige Druckaufträge</h3>
       ${batches.length ? batches.map((b) => `
         <div class="row between song-row">
-          <span>${new Date(b.createdAt).toLocaleDateString('de')} · ${b.cards} Karten${b.color ? '' : ' · s/w'}</span>
+          <span>${new Date(b.createdAt).toLocaleDateString('de')} · ${b.cards} Karten · ${b.perPage}/Seite${b.color ? '' : ' · s/w'}</span>
           <span class="row">
             <a class="btn small-btn ghost" href="/api/prints/${b.id}.pdf" target="_blank" rel="noopener">PDF</a>
             <button class="btn small-btn ghost danger" data-act="deleteBatch" data-id="${b.id}" title="Songs wieder als ungedruckt markieren">✕</button>
@@ -874,11 +885,16 @@ async function viewPrint(id) {
       ${batches.length ? '<p class="hint">✕ entfernt den Auftrag; die Songs gelten dann wieder als ungedruckt.</p>' : ''}
     </section>`;
 }
-C.sheetCount = (el) => { const n = Math.max(1, +el.value || 1); $('sheetInfo').textContent = `= ${n * 12} Karten, ${n * 2} PDF-Seiten`; };
+function sheetInfo(sheets, per) { return `= ${fmt(sheets * per)} Karten, ${sheets * 2} PDF-Seiten`; }
+C.sheetCount = (el) => {
+  const f = el.form, per = +f.perPage.value, n = Math.max(1, +f.sheets.value || 1);
+  settings.perPage = per; saveSettings();
+  $('sheetInfo').textContent = sheetInfo(n, per);
+};
 F.print = async (f, fd) => {
   const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Erstelle PDF…';
   try {
-    const r = await srv('POST', `/catalogs/${st.catalog.id}/prints`, { sheets: +fd.get('sheets'), onlyNew: !!fd.get('onlyNew'), color: !!fd.get('color') });
+    const r = await srv('POST', `/catalogs/${st.catalog.id}/prints`, { sheets: +fd.get('sheets'), perPage: +fd.get('perPage'), onlyNew: !!fd.get('onlyNew'), color: !!fd.get('color') });
     const a = document.createElement('a');
     a.href = `/api/prints/${r.id}.pdf?download=1`; a.download = '';
     document.body.appendChild(a); a.click(); a.remove();

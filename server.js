@@ -2,7 +2,7 @@ import express from 'express';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { db, tx, songId, getSetting, setSetting, seedDefaultCatalog } from './lib/db.js';
-import { renderCardsPdf, PER_SHEET } from './lib/print.js';
+import { renderCardsPdf, LAYOUTS, DEFAULT_PER_PAGE } from './lib/print.js';
 
 const PORT = +process.env.PORT || 3000;
 const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://hit-zeitreise.duckdns.org').replace(/\/$/, '');
@@ -321,7 +321,7 @@ app.delete('/api/catalogs/:id/shares/:userId', auth, wrap((req, res) => {
 app.get('/api/catalogs/:id/prints', auth, wrap((req, res) => {
   const c = catalogFor(req, req.params.id);
   res.json(db.prepare(`
-    SELECT pb.id, pb.sheets, pb.color, pb.created_at AS createdAt, COUNT(pi.song_id) AS cards
+    SELECT pb.id, pb.sheets, pb.color, pb.per_page AS perPage, pb.created_at AS createdAt, COUNT(pi.song_id) AS cards
     FROM print_batches pb LEFT JOIN print_items pi ON pi.batch_id = pb.id
     WHERE pb.catalog_id = ? AND pb.user_id = ? GROUP BY pb.id ORDER BY pb.id DESC
   `).all(c.id, req.user.id));
@@ -332,16 +332,17 @@ app.post('/api/catalogs/:id/prints', auth, wrap((req, res) => {
   const sheets = Math.max(1, Math.min(100, parseInt(req.body.sheets, 10) || 1));
   const onlyNew = req.body.onlyNew !== false;
   const color = req.body.color !== false;
+  const perPage = LAYOUTS[+req.body.perPage] ? +req.body.perPage : DEFAULT_PER_PAGE;
   const pool = db.prepare(`
     SELECT s.id FROM songs s WHERE s.catalog_id = ? ${onlyNew ? `AND NOT EXISTS (
       SELECT 1 FROM print_items pi JOIN print_batches pb ON pb.id = pi.batch_id WHERE pi.song_id = s.id AND pb.user_id = ?)` : ''}
   `).all(...(onlyNew ? [c.id, req.user.id] : [c.id])).map((r) => r.id);
   if (!pool.length) fail(400, onlyNew ? 'Alle Songs dieses Katalogs wurden schon gedruckt' : 'Der Katalog ist leer');
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-  const pick = pool.slice(0, sheets * PER_SHEET);
+  const pick = pool.slice(0, sheets * perPage);
   const batchId = tx(() => {
-    const { lastInsertRowid } = db.prepare('INSERT INTO print_batches (catalog_id, user_id, sheets, color, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(c.id, req.user.id, Math.ceil(pick.length / PER_SHEET), color ? 1 : 0, Date.now());
+    const { lastInsertRowid } = db.prepare('INSERT INTO print_batches (catalog_id, user_id, sheets, color, per_page, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(c.id, req.user.id, Math.ceil(pick.length / perPage), color ? 1 : 0, perPage, Date.now());
     const ins = db.prepare('INSERT INTO print_items (batch_id, song_id, position) VALUES (?, ?, ?)');
     pick.forEach((id, i) => ins.run(lastInsertRowid, id, i));
     return Number(lastInsertRowid);
@@ -357,7 +358,7 @@ app.get('/api/prints/:id.pdf', auth, wrap((req, res) => {
   const file = `hit-zeitreise-${b.name.replace(/[^\wäöüÄÖÜß-]+/g, '-').slice(0, 40)}-${b.id}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="${encodeURIComponent(file)}"; filename*=UTF-8''${encodeURIComponent(file)}`);
-  renderCardsPdf(cards, { color: !!b.color, title: `Hit-Zeitreise – ${b.name}` }).pipe(res);
+  renderCardsPdf(cards, { color: !!b.color, perPage: b.per_page, title: `Hit-Zeitreise – ${b.name}` }).pipe(res);
 }));
 
 app.delete('/api/prints/:id', auth, wrap((req, res) => {

@@ -13,7 +13,7 @@ Hitster-Variante mit eigenem Server: Songs hören, Jahr raten. Läuft unter
   Kataloge lassen sich mit anderen Nutzern teilen (nur lesen) und kopieren.
 - **Spielen:** Zufälliger Song aus einem Katalog, Auflösen zeigt Jahr, Titel und Interpret.
   Pro Spiel kommt jedes Jahr höchstens N-mal dran (Standard 3).
-- **Karten drucken:** PDF mit 12 Karten (6,5 × 6,5 cm) pro A4-Blatt. Vorderseite mit QR-Code,
+- **Karten drucken:** PDF mit 6, 12, 20 oder 30 Karten (8,5 / 6,5 / 4,8 / 3,8 cm) pro A4-Blatt. Vorderseite mit QR-Code,
   Rückseite gespiegelt mit Jahr, Interpret und Titel, dazu Schnittlinien. Man wählt eine Anzahl
   Blätter, die Songs werden zufällig gezogen und als gedruckt gemerkt. Beim nächsten Mal kommen
   nur noch ungedruckte Songs.

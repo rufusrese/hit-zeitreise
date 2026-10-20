@@ -9,7 +9,21 @@
 <title>Hit-Zeitreise</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="stylesheet" href="/style.css?v=5">
+<script>
+// Chrome auf dem Handy schaltet manchmal auf "Desktopwebsite" (980 px breites Layout, alles winzig).
+// Dann die Seite per CSS-Zoom wieder auf Handybreite bringen.
+(function () {
+  function fit() {
+    var coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    var z = coarse && screen.width && innerWidth > screen.width * 1.15 ? innerWidth / screen.width : 1;
+    document.documentElement.style.zoom = z > 1 ? z.toFixed(3) : '';
+  }
+  fit();
+  addEventListener('resize', fit);
+  addEventListener('orientationchange', function () { setTimeout(fit, 300); });
+})();
+</script>
 </head>
 <body>
 <header class="top">
@@ -37,6 +51,6 @@
 <dialog id="dlg"><div id="dlgBody"></div></dialog>
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="/app.js?v=4"></script>
+<script type="module" src="/app.js?v=5"></script>
 </body>
 </html>
