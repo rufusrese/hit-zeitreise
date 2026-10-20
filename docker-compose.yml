@@ -1,0 +1,21 @@
+services:
+  hit-zeitreise:
+    build: .
+    image: hit-zeitreise:latest
+    container_name: hit-zeitreise
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PUBLIC_URL=https://hit-zeitreise.duckdns.org
+      - DATA_DIR=/app/data
+    expose:
+      - "3000"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - caddy_net
+
+networks:
+  caddy_net:
+    external: true
+    name: caddy_net

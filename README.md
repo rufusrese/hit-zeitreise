@@ -1,53 +1,53 @@
 # Hit-Zeitreise
 
-Hitster-Variante ohne Karten/QR-Codes: Das Handy spielt über deinen Spotify-Account
-einen zufälligen Song, der 1957–2026 in den Top 5 der deutschen Single-Charts war.
-Danach tippt man auf **Auflösen** und sieht Jahr, Titel und Interpret.
-Jedes Jahr kommt pro Spiel höchstens 3× dran (einstellbar), passend zu den physischen Jahreskarten.
+Hitster-Variante mit eigenem Server: Songs hören, Jahr raten. Läuft unter
+<https://hit-zeitreise.duckdns.org>.
 
-## Voraussetzungen
+## Funktionen
 
-- **Spotify Premium** (die Web API steuert die Wiedergabe nur bei Premium-Accounts)
-- Eine eigene (kostenlose) Spotify-Developer-App für die Client ID
-- Die App muss über **HTTPS** erreichbar sein (z. B. GitHub Pages), damit der Login auf dem Handy klappt.
-  Lokal am PC geht auch `http://127.0.0.1:8000`.
+- **Accounts:** Registrierung mit Benutzername und Passwort. Der erste Account wird Admin.
+- **Spotify:** Jeder Nutzer verbindet sein eigenes Spotify (Premium). Abgespielt wird direkt im Browser
+  (Web Playback SDK) oder auf einem Spotify-Gerät.
+- **Kataloge:** Der Katalog „Deutsche Top-5-Hits 1957–2026“ (3577 Songs) steht allen zur Verfügung.
+  Eigene Kataloge legt man an per CSV-Import, per Spotify-Suche oder durch manuelles Eintragen.
+  Kataloge lassen sich mit anderen Nutzern teilen (nur lesen) und kopieren.
+- **Spielen:** Zufälliger Song aus einem Katalog, Auflösen zeigt Jahr, Titel und Interpret.
+  Pro Spiel kommt jedes Jahr höchstens N-mal dran (Standard 3).
+- **Karten drucken:** PDF mit 12 Karten (6,5 × 6,5 cm) pro A4-Blatt. Vorderseite mit QR-Code,
+  Rückseite gespiegelt mit Jahr, Interpret und Titel, dazu Schnittlinien. Man wählt eine Anzahl
+  Blätter, die Songs werden zufällig gezogen und als gedruckt gemerkt. Beim nächsten Mal kommen
+  nur noch ungedruckte Songs.
+- **QR-Scanner:** Unter „Scannen“ oder mit der Kamera-App des Handys. Die Karte öffnet
+  `/k/<id>` und spielt den Song ab.
 
-## Einrichtung
+## CSV-Format
 
-1. App hosten, z. B. mit GitHub Pages: Diesen Ordner in ein Repo pushen →
-   *Settings → Pages → Deploy from branch*. Die Adresse ist dann etwa
-   `https://<user>.github.io/<repo>/`.
-2. Auf <https://developer.spotify.com/dashboard> **Create app**:
-   - Redirect URI: genau die Adresse der App, z. B. `https://<user>.github.io/<repo>/`
-     (die App zeigt die richtige URI in den Einstellungen an)
-   - APIs: **Web API** und **Web Playback SDK** anhaken
-3. Client ID kopieren, in der App unter ⚙ eintragen, **Verbinden**.
-4. Weitere Mitspieler müssen nicht eingeloggt sein, es spielt nur ein Handy.
+Spalten `Titel`, `Interpret`, `Erscheinungsjahr` und optional `Spotify` (Link oder URI).
+Als Trennzeichen gehen `;`, `,` oder Tab. Die Kopfzeile darf fehlen, dann gilt diese Reihenfolge.
+Als Jahr ist auch ein Datum wie `1984-05-01` oder `01.05.1984` erlaubt.
 
-## Spielen
+## Spotify einrichten
 
-- **Spotify-App öffnen** (einmal kurz etwas abspielen), damit das Handy als Gerät auftaucht.
-  Alternativ unter ⚙ einen Bluetooth-Lautsprecher, PC oder eine Connect-Box auswählen.
-- ▶ spielt einen zufälligen Song. **Nicht auf den Sperrbildschirm schauen**, dort zeigt Spotify den Titel an.
-  Wer das vermeiden will, spielt auf einem anderen Gerät ab (Lautsprecher/PC).
-- **Auflösen** zeigt Jahr, Titel und Interpret. Erst dann zählt das Jahr.
-- **Song überspringen** (vor dem Auflösen): Der Song kommt nicht wieder, das Jahr zählt nicht.
-- Unter **Jahreskarten** steht, wie oft jedes Jahr schon vergeben ist.
-- Der Spielstand bleibt im Browser gespeichert, auch beim Neuladen. **Neues Spiel** unter ⚙ setzt ihn zurück.
+Eine Spotify-App im Entwicklungsmodus erlaubt **maximal 5 Spotify-Nutzer**. Jeder davon muss im
+Dashboard unter *User Management* eingetragen sein.
 
-## Daten
+1. Auf <https://developer.spotify.com/dashboard> in der App die Redirect URI
+   `https://hit-zeitreise.duckdns.org/` hinzufügen. APIs: Web API und Web Playback SDK.
+2. Als Admin in der App unter **Mehr → Admin** die Client ID als Standard eintragen.
+3. Wer nicht in die 5 Plätze passt, legt eine eigene Spotify-App an und trägt deren Client ID
+   unter **Mehr → Eigene Spotify-App verwenden** ein.
 
-`songs.js` enthält 3577 Songs mit Höchstposition 1–5 in den deutschen Single-Charts,
-deren erste Chartnotierung zwischen 1957 und 2026 liegt (Quelle: chartsurfer.de, Stand Oktober 2026).
+## Betrieb
 
-Ausnahme ab 2010: chartsurfer zeigt dort nur noch Platz 1 an. Deshalb sind ab 2010 alle Top-10-Songs
-enthalten, außer denen, für die Wikipedia einen Höchstplatz 6–10 belegt. Einzelne Songs ab 2010
-waren also „nur“ in den Top 10.
-Als Jahr gilt das Jahr der ersten Veröffentlichung bzw. des Charteinstiegs, nicht das Datum
-eines späteren Remasters auf Spotify.
+- Server: `ubuntu@164.30.74.140`, App in `/opt/hit-zeitreise` (Docker-Container `hit-zeitreise`
+  im Netz `caddy_net`). Die Daten (SQLite) liegen in `/opt/hit-zeitreise/data`.
+- Caddy: Block `hit-zeitreise.duckdns.org` in `/opt/caddy/Caddyfile`, leitet auf `hit-zeitreise:3000`.
+- Update ausrollen: `./deploy.sh` (rsync und `docker compose up -d --build`).
+- Lokal starten: `npm install`, dann `npm run dev` (Port 3000).
 
-Die passenden Spotify-Tracks werden zur Laufzeit über die Suche gefunden (Titel + Interpret,
-Live-/Remix-/Karaoke-Versionen werden abgewertet) und im Browser zwischengespeichert.
-Findet sich kein passender Track, wird der Song still übersprungen.
+## Daten des Standard-Katalogs
 
-`tools/` enthält die Skripte, mit denen die Liste erstellt wurde.
+`seed/top5.json`: Songs mit Höchstposition 1–5 in den deutschen Single-Charts, Erstnotierung
+1957–2026 (Quelle: chartsurfer.de, Stand Oktober 2026). Ab 2010 zeigt chartsurfer nur Platz 1,
+deshalb sind ab dort alle Top-10-Songs enthalten, außer denen, für die Wikipedia Platz 6–10 belegt.
+Die Skripte dazu liegen in `tools/`.
